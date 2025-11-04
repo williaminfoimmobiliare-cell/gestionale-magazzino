@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Gestionale Magazzino — Mini Web App (con Drive Sync)</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- html2canvas + jsPDF -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Gestionale Magazzino — 1 Grafix On the Road di Falzone William</h1>
+      <div class="small">Gestione entrate/uscite/rotture · Alert scorte ≤ 4 · PDF brandizzato · Sync Drive</div>
+    </div>
+    <div class="top-actions">
+      <button id="exportJsonBtn" title="Esporta dati (JSON)">Esporta JSON</button>
+      <button id="importJsonBtn" title="Importa dati (JSON)">Importa JSON</button>
+      <input id="jsonFileInput" type="file" accept=".json" />
+      <button id="syncNowBtn" title="Sincronizza ora">Sincronizza ora</button>
+      <label class="switch"><input id="autoSyncToggle" type="checkbox"><span>AutoSync 30s</span></label>
+      <button id="exportPdfBtn" title="Esporta PDF">Esporta PDF</button>
+    </div>
+  </header>
+
+  <div id="alertLow" class="alertbar hidden"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card" id="forms">
+        <h3>1) Aggiungi / Modifica Articolo</h3>
+        <div class="flexcol">
+          <input id="sku" placeholder="SKU (es. ABC-001)" />
+          <input id="name" placeholder="Nome articolo" />
+          <div class="row">
+            <input id="position" placeholder="Posizione (es. Scaffale A1)" />
+            <input id="stockInit" type="number" placeholder="Stock iniziale" min="0" />
+          </div>
+          <div class="row">
+            <input id="costPrice" type="number" placeholder="Costo acquisto (€/pz)" min="0" step="0.01" />
+            <input id="sellPrice" type="number" placeholder="Prezzo vendita proposto (€/pz)" min="0" step="0.01" />
+          </div>
+          <div class="controls">
+            <button id="addItemBtn">Aggiungi / Aggiorna Articolo</button>
+            <button id="clearItemBtn" class="ghost">Pulisci</button>
+          </div>
+          <div class="hint">Per aggiornare un articolo inserisci lo stesso SKU e premi "Aggiungi / Aggiorna".</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>2) Registra Transazione (IN / OUT / ROTTURA)</h3>
+        <div class="flexcol">
+          <select id="txSku"><option value="">-- seleziona SKU --</option></select>
+          <div class="row">
+            <select id="txType">
+              <option value="IN">IN (entrata)</option>
+              <option value="OUT">OUT (vendita)</option>
+              <option value="ROTTURA">ROTTURA (difetto)</option>
+            </select>
+            <input id="txQty" type="number" min="1" value="1" />
+          </div>
+          <input id="txSellPrice" type="number" placeholder="Prezzo vendita (solo OUT) €/pz" step="0.01" />
+          <div class="controls">
+            <button id="addTxBtn">Registra</button>
+            <button id="clearTxBtn" class="ghost">Pulisci</button>
+          </div>
+          <div class="hint">Le vendite vengono salvate inizialmente come <strong>non confermate</strong>. Puoi modificare o confermare il prezzo in "Transazioni".</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="flex-between"><h3>Inventario</h3><div class="small">Stock attuale / Valore €</div></div>
+        <div style="max-height:300px;overflow:auto;margin-top:8px">
+          <table id="inventoryTable">
+            <thead><tr><th>SKU</th><th>Nome</th><th>Posizione</th><th>Stock</th><th>Costo</th><th>Valore</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="flex-between">
+          <h3>Grafico andamento totale</h3>
+          <div class="small">Unità totali nel tempo</div>
+        </div>
+        <div class="chartwrap" style="margin-top:8px">
+          <canvas id="trendChart"></canvas>
+        </div>
+        <div class="controls" style="margin-top:10px">
+          <button id="resetDataBtn" class="ghost">Reset Dati (ATTENZIONE)</button>
+          <button id="downloadPdfSummary" class="ghost">Scarica tabella Inventario</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Transazioni</h3>
+        <div style="max-height:300px;overflow:auto;margin-top:8px">
+          <table id="transactionsTable">
+            <thead><tr><th>Data</th><th>SKU</th><th>Tipo</th><th>Qty</th><th>Prezzo</th><th>Confermata</th><th>Azioni</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin-top:8px">Usa Azioni → Modifica per cambiare il prezzo di vendita e poi Conferma per finalizzarlo.</div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Logo & PDF</h3>
+        <div class="flexcol">
+          <input id="companyName" placeholder="Nome azienda (es. 1 Grafix On the Road di Falzone William)" />
+          <div class="row">
+            <input id="logoFile" type="file" accept="image/*" />
+            <button id="removeLogoBtn" class="ghost">Rimuovi logo</button>
+          </div>
+          <div class="hint">Carica qui il logo aziendale — verrà incluso nell'intestazione del PDF.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Statistiche rapide</h3>
+        <table>
+          <tbody>
+            <tr><td>Totale articoli diversi</td><td id="statSkus">0</td></tr>
+            <tr><td>Totale unità in magazzino</td><td id="statUnits">0</td></tr>
+            <tr><td>Valore scorte (€)</td><td id="statValue">0.00</td></tr>
+            <tr><td>Perdite da rotture (€)</td><td id="statLoss">0.00</td></tr>
+            <tr><td>Totale venduto registrato (€)</td><td id="statSold">0.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer class="small">Per sincronizzare con Google Drive: vedi la guida (seguire i passaggi per pubblicare lo script WebApp).</footer>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
